@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>2FA Code Lookup</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d0f14;
+      --bg-card: #13161e;
+      --bg-input: #1a1d27;
+      --bg-result: #111420;
+      --border: #252836;
+      --border-focus: #4f6ef7;
+      --accent: #4f6ef7;
+      --accent-glow: rgba(79, 110, 247, 0.18);
+      --accent-hover: #6b85f8;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --text: #e8eaf0;
+      --text-secondary: #8b90a0;
+      --text-muted: #4a4f62;
+      --font-mono: 'IBM Plex Mono', monospace;
+      --font: 'IBM Plex Sans', sans-serif;
+    }
+
+    html, body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(79,110,247,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(79,110,247,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none; z-index: 0;
+    }
+
+    .wrapper { position: relative; z-index: 1; width: 100%; max-width: 460px; }
+
+    .top-badge {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 28px; justify-content: center;
+    }
+    .shield-icon {
+      width: 36px; height: 36px;
+      background: var(--accent-glow);
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+    .top-badge-text {
+      font-family: var(--font-mono); font-size: 13px;
+      color: var(--accent); letter-spacing: 0.12em; text-transform: uppercase;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 36px 32px 32px;
+      box-shadow: 0 0 0 1px rgba(79,110,247,0.05), 0 24px 64px rgba(0,0,0,0.5);
+    }
+
+    .card-title { font-size: 22px; font-weight: 600; margin-bottom: 6px; letter-spacing: -0.02em; }
+    .card-sub { font-size: 14px; color: var(--text-secondary); margin-bottom: 28px; line-height: 1.5; }
+    .divider { height: 1px; background: var(--border); margin: 24px 0; }
+
+    .input-label {
+      font-size: 12px; font-weight: 600;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--text-secondary); margin-bottom: 8px;
+    }
+
+    .input-wrap { position: relative; display: flex; align-items: center; }
+    .input-icon { position: absolute; left: 14px; color: var(--text-muted); font-size: 16px; pointer-events: none; }
+
+    .email-input {
+      width: 100%;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 13px 14px 13px 42px;
+      font-family: var(--font-mono); font-size: 14px; color: var(--text);
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .email-input::placeholder { color: var(--text-muted); }
+    .email-input:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .lookup-btn {
+      margin-top: 14px; width: 100%; padding: 13px;
+      background: var(--accent); border: none; border-radius: 10px;
+      color: #fff; font-family: var(--font); font-size: 15px; font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .lookup-btn:hover:not(:disabled) { background: var(--accent-hover); box-shadow: 0 4px 20px rgba(79,110,247,0.35); }
+    .lookup-btn:active:not(:disabled) { transform: scale(0.99); }
+    .lookup-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff;
+      border-radius: 50%; animation: spin 0.7s linear infinite; display: none;
+    }
+    .spinner.visible { display: block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .result-area { margin-top: 20px; display: none; }
+    .result-area.visible { display: block; }
+
+    .result-header {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+      font-size: 12px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary);
+    }
+    .result-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--text-muted); transition: background 0.3s;
+    }
+    .result-dot.success { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .result-dot.error { background: var(--red); }
+    .result-dot.waiting { background: var(--yellow); animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    .result-box { background: var(--bg-result); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    .result-tag {
+      background: rgba(79,110,247,0.08); border-bottom: 1px solid var(--border);
+      padding: 8px 14px; font-family: var(--font-mono); font-size: 11px;
+      color: var(--accent); display: flex; align-items: center; gap: 6px;
+    }
+    .result-messages { padding: 12px 0; max-height: 320px; overflow-y: auto; }
+    .result-messages::-webkit-scrollbar { width: 4px; }
+    .result-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .result-msg { padding: 8px 14px; display: flex; align-items: flex-start; gap: 10px; animation: fadein 0.3s ease; }
+    @keyframes fadein { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+
+    .result-msg-avatar {
+      width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+      background: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; overflow: hidden;
+    }
+    .result-msg-body { flex: 1; min-width: 0; }
+    .result-msg-name {
+      font-size: 12px; font-weight: 600; margin-bottom: 3px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .bot-tag {
+      font-size: 9px; font-weight: 700; background: var(--accent); color: #fff;
+      padding: 1px 4px; border-radius: 3px; text-transform: uppercase;
+    }
+    .result-msg-text {
+      font-family: var(--font-mono); font-size: 13px; color: var(--text);
+      white-space: pre-wrap; word-break: break-word; line-height: 1.6;
+    }
+    .empty-state { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+    .error-msg {
+      margin-top: 12px; padding: 10px 14px;
+      background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25);
+      border-radius: 8px; font-size: 13px; color: var(--red); display: none;
+    }
+    .error-msg.visible { display: block; }
+
+    .bottom-note { margin-top: 20px; text-align: center; font-size: 12px; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="top-badge">
+    <div class="shield-icon">🔐</div>
+    <span class="top-badge-text">2FA Inbox Checker</span>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Retrieve 2FA Code</div>
+    <div class="card-sub">Enter the email address associated with your account to fetch the latest verification code from your inbox.</div>
+
+    <div class="input-label">Email Address</div>
+    <div class="input-wrap">
+      <span class="input-icon">✉</span>
+      <input
+        class="email-input"
+        id="emailInput"
+        type="email"
+        placeholder="you@example.com"
+        onkeydown="if(event.key==='Enter') lookup()"
+        oninput="clearError()"
+        autocomplete="email"
+      />
+    </div>
+
+    <button class="lookup-btn" id="lookupBtn" onclick="lookup()">
+      <div class="spinner" id="spinner"></div>
+      <span id="btnText">Fetch Inbox</span>
+    </button>
+
+    <div class="error-msg" id="errorMsg"></div>
+
+    <div class="result-area" id="resultArea">
+      <div class="divider"></div>
+      <div class="result-header">
+        <div class="result-dot" id="resultDot"></div>
+        <span id="resultLabel">Bot Response</span>
+      </div>
+      <div class="result-box">
+        <div class="result-tag">
+          <span>📨</span>
+          <span id="resultCmd">/mail inbox ...</span>
+        </div>
+        <div class="result-messages" id="resultMessages">
+          <div class="empty-state">Waiting for bot response...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-note">🔒 Encrypted in transit &nbsp;·&nbsp; Results not stored</div>
+</div>
+
+<script>
+  // =============================================
+  // FILL THESE IN BEFORE GIVING TO USERS
+  // =============================================
+  const BACKEND_URL = "https://YOUR-RENDER-URL.onrender.com"; // your Render URL
+  const API_KEY     = "YOUR_API_KEY_HERE";                     // same key as in Render env vars
+  // =============================================
+
+  let isBusy = false;
+  let pollTimer = null;
+  let lastMsgId = null;
+
+  async function lookup() {
+    const email = document.getElementById("emailInput").value.trim();
+    if (!email || isBusy) return;
+    if (!email.includes("@")) { showError("Please enter a valid email address."); return; }
+
+    isBusy = true;
+    setLoading(true);
+    clearError();
+
+    document.getElementById("resultCmd").textContent = `/mail inbox ${email}`;
+    setResultState("waiting", "Sending command...");
+    showResult(true);
+    setMessages([]);
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/send`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": API_KEY,
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await res.json();
+      if (res.status === 401) throw new Error("Configuration error. Contact the admin.");
+      if (res.status === 429) throw new Error("Too many requests. Wait a minute and try again.");
+      if (!res.ok) throw new Error(data.error || "Something went wrong.");
+
+      lastMsgId = data.messageId;
+      setResultState("waiting", "Waiting for bot response...");
+
+      stopPoll();
+      let attempts = 0;
+      pollTimer = setInterval(async () => {
+        attempts++;
+        if (attempts > 24) {
+          stopPoll();
+          setResultState("error", "No response received");
+          setLoading(false);
+          isBusy = false;
+          setMessages([{ text: "Bot did not respond in time. Make sure it is online.", isBot: false, name: "System" }]);
+          return;
+        }
+        try {
+          const pr = await fetch(`${BACKEND_URL}/poll?after=${lastMsgId}`, {
+            headers: { "x-api-key": API_KEY },
+          });
+          const pd = await pr.json();
+          if (pd.messages && pd.messages.length > 0) {
+            stopPoll();
+            setLoading(false);
+            isBusy = false;
+            setResultState("success", "Response received");
+            setMessages(pd.messages.map(m => ({
+              text: m.content, name: m.author, avatar: m.avatar, isBot: m.isBot,
+            })));
+            lastMsgId = pd.messages[pd.messages.length - 1].id;
+          }
+        } catch (_) {}
+      }, 500);
+
+    } catch (err) {
+      setLoading(false);
+      isBusy = false;
+      setResultState("error", "Error");
+      showError(err.message);
+    }
+  }
+
+  function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+
+  function setLoading(on) {
+    document.getElementById("spinner").classList.toggle("visible", on);
+    document.getElementById("btnText").textContent = on ? "Fetching..." : "Fetch Inbox";
+    document.getElementById("lookupBtn").disabled = on;
+  }
+
+  function showResult(on) { document.getElementById("resultArea").classList.toggle("visible", on); }
+
+  function setResultState(state, label) {
+    document.getElementById("resultDot").className = "result-dot " + state;
+    document.getElementById("resultLabel").textContent = label;
+  }
+
+  function setMessages(msgs) {
+    const container = document.getElementById("resultMessages");
+    container.innerHTML = "";
+    if (!msgs.length) {
+      container.innerHTML = '<div class="empty-state">Waiting for bot response...</div>';
+      return;
+    }
+    msgs.forEach(m => {
+      const div = document.createElement("div");
+      div.className = "result-msg";
+
+      const av = document.createElement("div");
+      av.className = "result-msg-avatar";
+      if (m.avatar) {
+        const img = document.createElement("img");
+        img.src = m.avatar;
+        img.style.cssText = "width:100%;height:100%;object-fit:cover;";
+        img.onerror = () => { av.textContent = (m.name||"B")[0].toUpperCase(); };
+        av.appendChild(img);
+      } else { av.textContent = (m.name||"B")[0].toUpperCase(); }
+
+      const body = document.createElement("div");
+      body.className = "result-msg-body";
+
+      const name = document.createElement("div");
+      name.className = "result-msg-name";
+      name.textContent = m.name || "Bot";
+      if (m.isBot) {
+        const tag = document.createElement("span");
+        tag.className = "bot-tag"; tag.textContent = "BOT";
+        name.appendChild(tag);
+      }
+
+      const text = document.createElement("div");
+      text.className = "result-msg-text";
+      text.textContent = m.text;
+
+      body.appendChild(name);
+      body.appendChild(text);
+      div.appendChild(av);
+      div.appendChild(body);
+      container.appendChild(div);
+    });
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function showError(msg) {
+    const el = document.getElementById("errorMsg");
+    el.textContent = msg; el.classList.add("visible");
+  }
+  function clearError() { document.getElementById("errorMsg").classList.remove("visible"); }
+</script>
+</body>
+</html>
